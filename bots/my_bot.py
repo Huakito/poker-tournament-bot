@@ -30,7 +30,7 @@ import time
 from pokerbot import all_in, call, check, fold, raise_to, run
 from pokerbot.cards import is_pair, is_suited, rank
 
-BOT_NAME = "Pablo" 
+BOT_NAME = "Pablo"
 
 BIG_BLIND = 20
 
