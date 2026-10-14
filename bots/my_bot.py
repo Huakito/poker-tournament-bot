@@ -51,7 +51,10 @@ VALUE_BET_EDGE = 1.3        # bet for value when our win chance is 1.3x a fair s
 RAISE_EDGE = 1.8            # raise a bet when our win chance is 1.8x a fair share
 VALUE_BET_SIZE = 0.65       # value bet as a fraction of the pot
 BLUFF_FREQUENCY = 0.30      # how often to bluff when everyone checks to us
-BLUFF_SIZE = 0.5            # bluff as a fraction of the pot
+BLUFF_SIZE = 0.65           # bluff as a fraction of the pot
+CBET_FREQUENCY = 0.0        # after raising preflop, bet the flop this often even if we missed
+CBET_MIN_EDGE = 0.8         # ...but only with some chance to improve (overcards, draws)
+
 CALL_MARGIN = 0.05          # extra win chance we want, on top of pot odds, to call
 BETTOR_BLUFF_RATE = 0.25    # how often we think a bettor is bluffing
 RERAISER_BLUFF_RATE = 0.10  # how often we think someone raising our bet is bluffing
@@ -59,8 +62,8 @@ ALL_IN_FRACTION = 0.7       # if a bet would use this much of our stack, go all 
 
 MANIAC_BIG_RAISE = 15 * BIG_BLIND  # a raise this big counts as a "shove"
 MANIAC_MIN_SHOVES = 2       # this many shoves and we treat them as a maniac
-MANIAC_RAISE_RATE = 0.5     # ...or if they raise preflop this often
-MANIAC_MIN_HANDS = 4        # ...over at least this many hands
+MANIAC_RAISE_RATE = 0.7    # ...or if they raise preflop this often
+MANIAC_MIN_HANDS = 8      # ...over at least this many hands
 
 LATE_HAND = 14              # from this hand on, adjust for the chip standings
 LEADING_RANGE_FACTOR = 0.7  # when leading late, play 30% fewer hands
@@ -205,8 +208,7 @@ def decide_postflop(state):
     behind_late = state.hand_number >= LATE_HAND and not is_leading(state)
     bettor = last_bettor(state)
 
-    # If someone bet into us, believe them (mostly): a bet usually means a
-    # real hand, and a raise over our own bet means a very good one.
+    
     # Maniacs bet anything, so their cards stay random.
     gain, honesty = 0, 0.0
     if not state.can_check and bettor and not is_maniac(bettor):
@@ -221,9 +223,17 @@ def decide_postflop(state):
     if state.can_check:
         if edge >= VALUE_BET_EDGE:
             return bet_to(state, VALUE_BET_SIZE * state.pot)
+        no_maniacs = not any(is_maniac(p.name) for p in opponents)
+
+    
+        preflop_raises = [m for m in state.history if m.street == "preflop" and m.action == "raise"]
+        we_raised_last = preflop_raises and preflop_raises[-1].seat == state.my_seat
+        if (state.street == "flop" and we_raised_last and no_maniacs and len(opponents) <= 2
+                and edge >= CBET_MIN_EDGE and random.random() < CBET_FREQUENCY):
+            return bet_to(state, BLUFF_SIZE * state.pot)
+
         checked_to_us = any(m.street == state.street and m.action == "check"
                             for m in state.history)
-        no_maniacs = not any(is_maniac(p.name) for p in opponents)
         if checked_to_us and no_maniacs and len(opponents) <= 2 and random.random() < BLUFF_FREQUENCY:
             return bet_to(state, BLUFF_SIZE * state.pot)
         return check()
@@ -419,7 +429,7 @@ def update_opponent_stats(state):
     hand_id = (mem.match, state.hand_number)
 
     for move in state.history[mem.seen:]:
-        if move.seat == state.my_seat:
+        if move.seat == state.my_seat or move.action in ("small_blind", "big_blind"):
             continue
         player = mem.players.setdefault(move.name, {"hands": set(), "raised": set(), "shoves": set()})
         player["hands"].add(hand_id)
